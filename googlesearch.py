@@ -1,20 +1,21 @@
 '''
 Created on May 5, 2017
 
-@author: anthony
+@author: Anthony
 @updated: Gobaan Raveendran
 @Description: Updates this library from using urlib to using sessions and caching
 '''
-import requests_cache
-import requests
-import urllib.parse
 import math
 import re
-from bs4 import BeautifulSoup
-from threading import Thread
+import urllib.parse
 from collections import deque
-from time import sleep
 from datetime import timedelta
+from threading import Thread
+from time import sleep
+
+import requests
+import requests_cache
+from bs4 import BeautifulSoup
 
 expire_after = timedelta(days=7)
 requests_cache.install_cache('google_cache', expire_after=expire_after)
@@ -53,7 +54,7 @@ class GoogleSearch(object):
             soup = BeautifulSoup(google_response.text, "lxml")
             if total is None:
                 total_text = next(soup.select(GoogleSearch.TOTAL_SELECTOR)[0].children).encode('utf-8')
-                total = int(re.sub("[',\. ]", "", re.search("(([0-9]+[',\. ])*[0-9]+)", str(total_text)).group(1)))
+                total = int(re.sub("[',. ]", "", re.search("(([0-9]+[',. ])*[0-9]+)", str(total_text)).group(1)))
 
             results = self.parse_results(soup.select(GoogleSearch.RESULT_SELECTOR))
             if len(search_results) + len(results) > num_results:
@@ -107,11 +108,9 @@ class SearchResult:
     def __str__(self):
         return  str(self.__dict__)
 
-    def __unicode__(self):
-        return unicode(self.__str__())
-
     def __repr__(self):
         return self.__str__()
+
 
 if __name__ == "__main__":
     import sys
