@@ -1,4 +1,5 @@
 import collections
+import logging
 import os.path
 import re
 import time
@@ -6,10 +7,14 @@ import time
 import browsermobproxy
 import selenium.webdriver
 
+logging.basicConfig(filename='cryptocompare.log', level=logging.DEBUG)
+
 
 class Exchange(object):
     def __init__(self, url):
-        self.url = url
+        self.exchange = url.split('/')[4]
+        self.url = f'https://www.cryptocompare.com/exchanges/{self.exchange}/overview/'
+        logging.debug(self.url)
         self.entries = None
 
     # TODO: Leave this connection open and allow refreshing
@@ -23,16 +28,19 @@ class Exchange(object):
         options.add_argument('--proxy-server=%s' % proxy.proxy)
         driver = selenium.webdriver.Chrome(chrome_options=options)
         proxy.new_har(options={'captureHeaders': True, 'captureContent': True, 'captureBinaryContent': True})
-        driver.get(self.url)
-        proxy.wait_for_traffic_to_stop(1, 10)
-        entries = (Entry(entry) for entry in proxy.har['log']['entries']
-                   if 'streamer' in entry['request']['url'])
-        time.sleep(10)
+        time.sleep(5)
+        try:
+            driver.get(self.url)
+            proxy.wait_for_traffic_to_stop(1, 10)
+            time.sleep(10)
+            entries = (Entry(entry) for entry in proxy.har['log']['entries']
+                       if 'streamer' in entry['request']['url'])
+            self.entries = [entry for entry in entries if entry.trades]
+        except Exception as e:
+            print(e)
         driver.close()
-        self.entries = [entry for entry in entries if entry.trades]
-
-    def compare(self, other_exchange):
-        pass
+        server.stop()
+        time.sleep(5)
 
     def __repr__(self):
         return "<Exchange %s>" % self.entries
@@ -65,15 +73,15 @@ class Entry(object):
             if base < coin:
                 coins = (base, coin)
                 rate = 1.0 / rate
-            trade = Trade(exchange=data[1],
-                          coins=coins,
+            trade = Trade(coins=coins,
                           rate=rate,
-                          net_worth=data[10])
+                          net_worth=float(data[10]))
         except IndexError:
+            logging.debug(data)
             return None
         except ValueError:
-            print(data)
-            raise
+            logging.debug(data)
+            return None
         return trade
 
     def parse_trades(self):
@@ -86,7 +94,7 @@ class Entry(object):
         return "<Entry trades:%s>" % self.trades
 
 
-Trade = collections.namedtuple("Trade", ['exchange', 'coins', 'rate', 'net_worth'])
+Trade = collections.namedtuple("Trade", ['coins', 'rate', 'net_worth'])
 
 if __name__ == '__main__':
     url = "https://www.cryptocompare.com/exchanges/okex/overview"

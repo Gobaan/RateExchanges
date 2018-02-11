@@ -67,11 +67,17 @@ def parse_reviews(search_results):
         'www.reddit.com': parse_reddit
     }
     reviews = {}
+    seen = set()
     for result in search_results:
         domain = urlparse(result.url).netloc
         try:
-            print(domain)
+            if domain in seen:
+                continue
+            seen.update((domain,))
             reviews[domain] = parsers[domain](result)
         except KeyError:
             pass
+        except Exception as e:
+            print(e)
+
     return reviews

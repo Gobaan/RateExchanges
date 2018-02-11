@@ -51,11 +51,14 @@ def count_domain(exchange_name):
 if __name__ == "__main__":
 
     encoder = utilities.get_encoder(cryptocompare.Exchange, cryptocompare.Entry)
+    spread = {}
     for name in coin_count:
         links = fetch_links(name)
         reviews = parsers.parse_reviews(links)
-        print(json.dumps(reviews, cls=encoder, indent=4))
-        break
+        spread[name] = reviews
+
+    with open('spread.json', 'w') as fp:
+        json.dump(spread, fp, cls=encoder, indent=4)
 
 # TODO: Parse a bunch of exchangses and see if we can spread them
 # TODO: meta crawl the cryptocompare website

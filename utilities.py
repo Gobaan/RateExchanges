@@ -1,8 +1,6 @@
 import json
 
 
-# Encodes any class that's initialization does not have side effects external to the class
-# fails explosively on recursive instances
 def get_encoder(*cls_hooks):
     hooks = {
         "__%s__" % hook.__name__.lower(): hook
@@ -10,14 +8,15 @@ def get_encoder(*cls_hooks):
     }
 
     class GenericEncoder(json.JSONEncoder):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
         def default(self, obj):
             if hasattr(obj, '__dict__'):
-                class_name = "__%s__" % type(obj).__name__.lower()
-
-                return {**{"__name__": class_name},
+                name = type(obj).__name__.lower()
+                return {**{"__name__": f"__{name}__"},
                         **{key: self.default(value) for key, value
                            in vars(obj).items()}}
-
             try:
                 return json.JSONEncoder.default(self, obj)
             except TypeError:
@@ -40,6 +39,8 @@ def get_encoder(*cls_hooks):
 
 
 def is_eq(*objects):
+    compared = set()
+
     def is_eq_dictionary(dct, other):
         if dct.keys() != other.keys():
             return False
@@ -57,7 +58,6 @@ def is_eq(*objects):
         return True
 
     def is_eq_primitive(obj, other):
-        # We are very likely to hit this condition so I put an early exit here
         if obj == other:
             return True
 
@@ -74,8 +74,6 @@ def is_eq(*objects):
         except AttributeError:
             return False
 
-    # once again fails on recursion, since json objects cannot have recursion
-    # also doesn't work with functions with different code, or classes with hidden variables
     def is_eq_helper(obj, other):
         if is_eq_primitive(obj, other):
             return True
@@ -83,6 +81,10 @@ def is_eq(*objects):
         if obj.__class__ is not other.__class__:
             return False
 
+        if (obj, other) in compared:
+            return True
+
+        compared.update([(obj, other), (other, obj)])
         return is_eq_dictionary(vars(obj), vars(other))
 
     for first, second in zip(objects, objects[1:]):
