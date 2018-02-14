@@ -1,14 +1,12 @@
 import collections
-import json
 import math
 
 import networkx
 import pandas as pd
 
-import cryptocompare
-import utilities
 
-
+# Tasks: Unit tests for current code
+#       Print a sorted list of the scores for every cycle
 class Exchange(object):
     def __init__(self, name, exchange):
         self.name = name
@@ -23,8 +21,6 @@ class Exchange(object):
         # TODO: Filter out bad exchanges
         for entry in exchange['www.cryptocompare.com'].entries:
             for trade in entry.trades:
-                if trade[0] == ['BTC', 'USD']:
-                    print(self.name, trade)
                 self.rates[tuple(trade[0])] = trade[1]
 
 
@@ -59,32 +55,71 @@ def to_df(exchanges):
 
 
 def to_coin_graph(trades, penalty=0.01):
-    """ Example: src=bitcoin, dst=ethereum, highest=10, lowest=9"""
-    """ There may be an intermediate path that goes through a poor trade but leads to a good trade"""
+    """
+    :param trades: Data frame containing all the trades for this coin
+    :param penalty: Penalty paid for moving from one exchange to another
+    :return Graph(Coin:Coin) mapping coins to their exchange rates
+    Simplifies the graph by always trading at the best possible buy/sell spread.
+    If we make the pessimistic assumption that the coin is never in the right exchange for the trade, we have to
+    always pay a penalty fee to the miners to move our coin from one exchange to another.
+
+    Example: src=bitcoin, dst=ethereum, highest=10, lowest=9
+    Penalty is 10%
+    If min_rate = 0.1 and max_rate is 0.2 then we want to sell this coin for 0.11/usd and buy this coin for 0.18/usd
+    so sell rate is 0.11/usd and backwards rate is 5.55usd/coin.
+    If min_Rate is 1.2 and max rate is 2.4 then we want to sell this coin for 1.32/usd and buy this coin for 2.16/usd
+    so sell rate is 1.32/usd and backwards rate is 0.4629 usd/coin
+    """
     graph = networkx.DiGraph()
     trades.reset_index()
+
     buy = trades.loc[trades.reset_index().groupby(['src', 'dst'])['rate'].idxmax()]
     sell = trades.loc[trades.reset_index().groupby(['src', 'dst'])['rate'].idxmin()]
+    buy_penalty = math.log(1 - penalty)
+    sell_penalty = math.log(1 + penalty)
+
     for _, row in buy.iterrows():
-        order = {'best_rate': float(-math.log(row.rate * (1 - penalty))), 'best_exchange': row.exchange_name}
+        order = {'penalized_rate': -math.log(row.rate) - buy_penalty,
+                 'best_exchange': row.exchange_name,
+                 'raw_rate': row.rate}
         graph.add_edge(row.src, row.dst, **order)
 
-    # every pair only exists once, so we flip the destination and source and the rate
     for _, row in sell.iterrows():
-        order = {'worst_rate': float(-math.log(1 / row.rate * (1 + penalty))), 'worst_exchange': row.name}
+        order = {'penalized_rate': math.log(row.rate) + sell_penalty,
+                 'worst_exchange': row.name,
+                 'raw_rate': row.rate}
         graph.add_edge(row.dst, row.src, **order)
 
     return graph
 
 
-# TODO: Verify coin_graph isn't spitting out garbage
+def calculate_short_cycles(coin_graph):
+    """
+    :param coin_graph: Graph(Coin:Coin)
+    :return: Graph(Coin:Coin) only containing currency pairs that can be exchange for a direct profit against each other
+    """
+    new_graph = networkx.DiGraph()
+    rates = networkx.get_edge_attributes(coin_graph, "penalized_rate")
+    for (u, v) in rates:
+        if rates[u, v] + rates[v, u] < 0:
+            new_graph.add_edge(u, v, rate=rates[u, v])
+    return new_graph
 
-def to_graph(merged_frame):
-    # Add all the pairs and their exchange rate to the graph
-    # TODO: currently this is undirected because of the cryptocompare data
+
+def to_exchange_graph(frame):
+    """
+    params: frame: DataFrame(name:Name of exchange, src:Coin base, dst:Coin target, rate:Exchange rate)
+    returns: Graph((Exchange_coin):(Exchange_coin)) Graph storing the cost of converting a coin to either another
+    coin, or to another exchange
+    This graph simulates the exchange ecosystem perfectly, but has much more nodes, for now we have abandoned this code
+    Basically allows exchanges to trade coins within themselves, and connects exchanges to each other using
+    a penalty, simulating transfering from one wallet to another
+    """
     # TODO: Once you connect the apis, this can have different buy/sell prices
-    graph = networkx.Graph()
+    # TODO: ALERT APRIL 30, 2018 IF THIS CODE IS UNTOUCHED REMOVE IT
+    graph = networkx.DiGraph()
     usd_bases = []
+    merged_frame = frame.merge(frame, on=('src', 'dst'))
     for index, row in merged_frame.iterrows():
         dst = f"{row.name_x}_{row.dst}"
         src = f"{row.name_x}_{row.src}"
@@ -104,28 +139,3 @@ def to_graph(merged_frame):
 def graph_to_gephi(graph, fname='default.gexf'):
     with open(fname, 'wb') as fp:
         networkx.write_gexf(graph, fp)
-
-
-if __name__ == '__main__':
-    # Task:
-    # I wish find the best two exchanges to put my money such that I can buy coin C1 from exchange E1
-    # Transfer Coin C1 to E2, sell Coin C1 for C2, Transfer Coin C2 Back To E1 and repurchase C1
-    # Notes: within an exchange am I willing to do intermediate trades?
-
-    # Arbitrage graph?
-
-    with open("spread.json") as fp:
-        encoder = utilities.get_encoder(cryptocompare.Exchange, cryptocompare.Entry, cryptocompare.Trade)
-        exchanges = json.load(fp, object_hook=encoder.decode)
-        processed_exchanges = [Exchange(name, exchange) for name, exchange in exchanges.items()]
-        rankings = get_ranks(processed_exchanges)
-        percents = calculate_spreads(rankings)
-
-        frame = to_df(processed_exchanges)
-        merged = frame.merge(frame, on=('src', 'dst'))
-        merged['spread'] = merged.rate_x / merged.rate_y - 1
-        top_spread = merged.sort_values(by='spread')
-        graph = to_coin_graph(frame)
-        print(graph.number_of_nodes())
-        print(graph.number_of_edges())
-        graph_to_gephi(graph)

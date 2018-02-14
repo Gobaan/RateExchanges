@@ -57,7 +57,7 @@ if __name__ == "__main__":
         reviews = parsers.parse_reviews(links)
         spread[name] = reviews
 
-    with open('spread.json', 'w') as fp:
+    with open('sample_crawl.json', 'w') as fp:
         json.dump(spread, fp, cls=encoder, indent=4)
 
 # TODO: Parse a bunch of exchangses and see if we can spread them
